@@ -5,6 +5,7 @@ import {
   handleOrganizeDictation,
   handleRefineChapter,
   handleContinuationPrompts,
+  handleDownloadAndroidScript,
 } from "./server/apiRouter";
 
 dotenv.config();
@@ -18,6 +19,7 @@ app.use(express.json({ limit: "25mb" }));
 app.post("/api/organize-dictation", handleOrganizeDictation);
 app.post("/api/refine-chapter", handleRefineChapter);
 app.post("/api/continuation-prompts", handleContinuationPrompts);
+app.get("/api/download-android-script", handleDownloadAndroidScript);
 
 // Serve static frontend in production
 const distPath = path.resolve(process.cwd(), "dist");

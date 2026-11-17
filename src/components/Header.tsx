@@ -9,6 +9,7 @@ import {
   PlusCircle,
   Sparkles,
   Sun,
+  Smartphone,
 } from "lucide-react";
 import { Book, BookPaperTheme, AppVibrantTheme } from "../types";
 
@@ -26,6 +27,7 @@ interface HeaderProps {
   fontSize: number;
   setFontSize: React.Dispatch<React.SetStateAction<number>>;
   onOpenExport: () => void;
+  onOpenAndroidApk: () => void;
   totalWords: number;
 }
 
@@ -43,6 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
   fontSize,
   setFontSize,
   onOpenExport,
+  onOpenAndroidApk,
   totalWords,
 }) => {
   return (
@@ -232,6 +235,16 @@ export const Header: React.FC<HeaderProps> = ({
               A+
             </button>
           </div>
+
+          {/* Descargar APK / Android */}
+          <button
+            onClick={onOpenAndroidApk}
+            title="Instalar en Android o Descargar APK"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-stone-950 font-extrabold text-xs transition shadow-md shadow-emerald-500/20"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>Descargar APK</span>
+          </button>
 
           {/* Export */}
           <button

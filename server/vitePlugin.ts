@@ -3,6 +3,7 @@ import {
   handleOrganizeDictation,
   handleRefineChapter,
   handleContinuationPrompts,
+  handleDownloadAndroidScript,
 } from "./apiRouter";
 
 export function bookApiPlugin(): Plugin {
@@ -60,6 +61,8 @@ export function bookApiPlugin(): Plugin {
           return handleRefineChapter(jsonReq, jsonRes);
         } else if (url === "/api/continuation-prompts" && req.method === "POST") {
           return handleContinuationPrompts(jsonReq, jsonRes);
+        } else if (url === "/api/download-android-script" && req.method === "GET") {
+          return handleDownloadAndroidScript(jsonReq, jsonRes);
         }
 
         next();

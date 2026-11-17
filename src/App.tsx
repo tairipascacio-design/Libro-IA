@@ -12,6 +12,8 @@ import { CharactersTimelineModal } from "./components/CharactersTimelineModal";
 import { ExportModal } from "./components/ExportModal";
 import { NewBookModal } from "./components/NewBookModal";
 import { ReorganizationModal } from "./components/ReorganizationModal";
+import { AndroidApkModal } from "./components/AndroidApkModal";
+import { OfflineIndicator } from "./components/OfflineIndicator";
 import {
   Book,
   BookChapter,
@@ -45,6 +47,7 @@ export default function App() {
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [showNewBookModal, setShowNewBookModal] = useState(false);
+  const [showAndroidModal, setShowAndroidModal] = useState(false);
 
   // Modal after reorganization
   const [reorganizationData, setReorganizationData] = useState<{
@@ -318,6 +321,7 @@ export default function App() {
         fontSize={fontSize}
         setFontSize={setFontSize}
         onOpenExport={() => setShowExportModal(true)}
+        onOpenAndroidApk={() => setShowAndroidModal(true)}
         totalWords={totalWords}
       />
 
@@ -397,6 +401,14 @@ export default function App() {
           onCreateBook={handleCreateBook}
         />
       )}
+
+      {/* Android & APK Download Modal */}
+      {showAndroidModal && (
+        <AndroidApkModal onClose={() => setShowAndroidModal(false)} />
+      )}
+
+      {/* Offline Connectivity Banner */}
+      <OfflineIndicator />
     </div>
   );
 }

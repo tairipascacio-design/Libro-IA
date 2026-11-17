@@ -69,3 +69,34 @@ export async function handleContinuationPrompts(req: Request, res: Response) {
     });
   }
 }
+
+export function handleDownloadAndroidScript(_req: Request, res: Response) {
+  const scriptContent = `#!/bin/bash
+# Script oficial para compilar el APK nativo de Voz a Libro con Capacitor + Android Studio
+# Requisitos: Node.js 18+, Java JDK 17+ y Android Studio / Android SDK instalado
+
+echo "1. Instalando Capacitor para Android..."
+npm install @capacitor/core @capacitor/cli @capacitor/android
+
+echo "2. Inicializando proyecto Android..."
+npx cap init "Voz a Libro" "com.vozalibro.app" --web-dir=dist
+
+echo "3. Compilando web app..."
+npm run build
+
+echo "4. Agregando plataforma Android..."
+npx cap add android
+npx cap sync android
+
+echo "5. Abriendo Android Studio para generar el APK (Build > Build Bundle(s) / APK(s) > Build APK)..."
+npx cap open android
+`;
+
+  res.setHeader("Content-Type", "text/x-shellscript; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    'attachment; filename="compilar-apk-android.sh"'
+  );
+  res.end(scriptContent);
+}
+
