@@ -9,6 +9,10 @@ export type BookGenre =
   | "Poesía y Prosa Poética";
 
 export type BookTone =
+  | "Fiel a mis palabras (solo puntuación y orden)"
+  | "Diálogos con raya literaria (—)"
+  | "Orden cronológico estricto"
+  | "Corrección ortográfica ligera"
   | "Literario y Evocador"
   | "Intimo y Emocional"
   | "Dinámico y de Suspenso"
@@ -19,6 +23,31 @@ export type BookTone =
 export type AppVibrantTheme = "sunset" | "fiesta" | "ocean" | "violet";
 
 export type BookPaperTheme = "classic" | "peach" | "mint" | "lavender";
+
+export type PaywallReason =
+  | "books"
+  | "chapters"
+  | "words"
+  | "ai"
+  | "characters"
+  | "audiobook"
+  | "export"
+  | "general";
+
+export interface BillingStatus {
+  authenticated: boolean;
+  userKey: string;
+  email: string | null;
+  plan: "free" | "pro";
+  isPro: boolean;
+  aiUses: number;
+  aiLimit: number | null;
+  aiRemaining: number | null;
+  gatewayProvider: "stripe" | "lemonsqueezy" | "demo";
+  billingConfigured: boolean;
+  portalUrl: string | null;
+  subscriptionStatus: string;
+}
 
 export interface BookChapter {
   id: string;
@@ -66,6 +95,7 @@ export interface Book {
   characters: Character[];
   timeline: TimelineEvent[];
   dictationHistory: DictationLog[];
+  isDemo?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -87,4 +117,5 @@ export interface OrganizeResult {
   placements: DictationPlacement[];
   newCharacters?: Array<{ name: string; role: string; description: string }>;
   newTimelineEvents?: Array<{ timeContext: string; event: string }>;
+  billingStatus?: BillingStatus;
 }

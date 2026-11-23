@@ -66,6 +66,78 @@ export interface OrganizeDictationResponse {
   suggestedSynopsis?: string;
 }
 
+function isRetryableModelError(err: any): boolean {
+  const msg = String(err?.message || err || "");
+  return (
+    err?.status === 429 ||
+    err?.status === 503 ||
+    err?.status === 500 ||
+    err?.status === 404 ||
+    msg.includes("429") ||
+    msg.includes("503") ||
+    msg.includes("RESOURCE_EXHAUSTED") ||
+    msg.includes("UNAVAILABLE") ||
+    msg.includes("high demand") ||
+    msg.toLowerCase().includes("quota")
+  );
+}
+
+const FREE_TIER_MODELS = ["gemini-3.1-flash-lite", "gemini-4-hydrogen"] as const;
+
+async function generateWithFreeFallback(
+  contents: string,
+  config: Record<string, any>
+) {
+  let lastErr: any;
+  for (const model of FREE_TIER_MODELS) {
+    try {
+      return await ai.models.generateContent({
+        model,
+        contents,
+        config,
+      });
+    } catch (err: any) {
+      lastErr = err;
+      if (!isRetryableModelError(err)) {
+        throw err;
+      }
+      console.warn(`Model ${model} unavailable/limited, trying fallback...`, err?.status || err?.message);
+    }
+  }
+  throw lastErr;
+}
+
+function formatGeminiError(err: any): Error & { statusCode?: number } {
+  const msg = String(err?.message || err || "");
+  if (
+    err?.status === 429 ||
+    msg.includes("429") ||
+    msg.includes("RESOURCE_EXHAUSTED") ||
+    msg.toLowerCase().includes("quota")
+  ) {
+    const e: Error & { statusCode?: number } = new Error(
+      "Se alcanzó temporalmente el límite gratuito de solicitudes por minuto/día de Gemini. Espera un momento e intenta de nuevo."
+    );
+    e.statusCode = 429;
+    return e;
+  }
+  if (err?.status === 503 || msg.includes("503") || msg.includes("UNAVAILABLE")) {
+    const e: Error & { statusCode?: number } = new Error(
+      "Los servidores de Gemini están saturados en este instante. Intenta de nuevo en unos segundos."
+    );
+    e.statusCode = 503;
+    return e;
+  }
+  if (msg.includes("API_KEY_INVALID") || msg.includes("PERMISSION_DENIED") || err?.status === 403) {
+    const e: Error & { statusCode?: number } = new Error(
+      "La clave de Gemini API no es válida o no tiene permisos. Revísala en Settings > Secrets."
+    );
+    e.statusCode = 403;
+    return e;
+  }
+  return new Error(msg || "Error al comunicarse con Gemini.");
+}
+
 export async function organizeDictationWithGemini(
   rawDictation: string,
   book: BookContext,
@@ -119,104 +191,107 @@ TU LABOR PRINCIPAL ES EL ACOMODO Y LA ESTRUCTURA:
       "Acomoda las oraciones y párrafos del autor en el orden cronológico y lógico correcto sin cambiar sus palabras.",
   });
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3.8-flash",
-    contents: prompt,
-    config: {
-      systemInstruction: systemInstruction,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          analysisSummary: {
-            type: Type.STRING,
-            description:
-              "Explicación cálida y clara al autor de cómo se interpretó su dictado, cómo se acomodó cronológicamente y qué decisiones literarias se tomaron.",
-          },
-          suggestedTitle: {
-            type: Type.STRING,
-            description: "Título del libro sugerido o refinado si aplica.",
-          },
-          suggestedSynopsis: {
-            type: Type.STRING,
-            description: "Sinopsis actualizada del libro basada en los nuevos hechos.",
-          },
-          placements: {
-            type: Type.ARRAY,
-            description: "Lista de ubicaciones donde se acomoda el texto pulido.",
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                action: {
-                  type: Type.STRING,
-                  description:
-                    "create_chapter (nuevo capítulo), append (al final del capítulo), insert (insertar cronológicamente al inicio o en el cuerpo), o update_chapter",
-                },
-                targetChapterId: {
-                  type: Type.STRING,
-                  description: "ID del capítulo existente donde encaja, o vacío si es create_chapter",
-                },
-                newChapterTitle: {
-                  type: Type.STRING,
-                  description: "Título del nuevo capítulo si action es create_chapter",
-                },
-                newChapterOrder: {
-                  type: Type.INTEGER,
-                  description: "Posición numérica del nuevo capítulo en el índice general",
-                },
-                polishedText: {
-                  type: Type.STRING,
-                  description:
-                    "Prosa literaria final, exquisitamente redactada, lista para estampar en las páginas del libro.",
-                },
-                placementExplanation: {
-                  type: Type.STRING,
-                  description:
-                    "Justificación de por qué este fragmento va aquí cronológica o dramáticamente.",
-                },
-                chronologicalContext: {
-                  type: Type.STRING,
-                  description: "Ubicación temporal de la escena (ej: '5 años antes del viaje', 'La noche anterior', 'Desenlace').",
-                },
+  const config = {
+    systemInstruction: systemInstruction,
+    responseMimeType: "application/json",
+    responseSchema: {
+      type: Type.OBJECT,
+      properties: {
+        analysisSummary: {
+          type: Type.STRING,
+          description:
+            "Explicación cálida y clara al autor de cómo se interpretó su dictado, cómo se acomodó cronológicamente y qué decisiones literarias se tomaron.",
+        },
+        suggestedTitle: {
+          type: Type.STRING,
+          description: "Título del libro sugerido o refinado si aplica.",
+        },
+        suggestedSynopsis: {
+          type: Type.STRING,
+          description: "Sinopsis actualizada del libro basada en los nuevos hechos.",
+        },
+        placements: {
+          type: Type.ARRAY,
+          description: "Lista de ubicaciones donde se acomoda el texto pulido.",
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              action: {
+                type: Type.STRING,
+                description:
+                  "create_chapter (nuevo capítulo), append (al final del capítulo), insert (insertar cronológicamente al inicio o en el cuerpo), o update_chapter",
               },
-              required: [
-                "action",
-                "polishedText",
-                "placementExplanation",
-                "chronologicalContext",
-              ],
-            },
-          },
-          newCharacters: {
-            type: Type.ARRAY,
-            description: "Nuevos personajes detectados en el dictado.",
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                role: { type: Type.STRING },
-                description: { type: Type.STRING },
+              targetChapterId: {
+                type: Type.STRING,
+                description: "ID del capítulo existente donde encaja, o vacío si es create_chapter",
               },
-              required: ["name", "role", "description"],
-            },
-          },
-          newTimelineEvents: {
-            type: Type.ARRAY,
-            description: "Hitos cronológicos detectados para mantener coherencia temporal.",
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                timeContext: { type: Type.STRING },
-                event: { type: Type.STRING },
+              newChapterTitle: {
+                type: Type.STRING,
+                description: "Título del nuevo capítulo si action es create_chapter",
               },
-              required: ["timeContext", "event"],
+              newChapterOrder: {
+                type: Type.INTEGER,
+                description: "Posición numérica del nuevo capítulo en el índice general",
+              },
+              polishedText: {
+                type: Type.STRING,
+                description:
+                  "Texto final con las mismas palabras del autor debidamente puntuado y ordenado.",
+              },
+              placementExplanation: {
+                type: Type.STRING,
+                description:
+                  "Justificación de por qué este fragmento va aquí cronológica o dramáticamente.",
+              },
+              chronologicalContext: {
+                type: Type.STRING,
+                description: "Ubicación temporal de la escena (ej: '5 años antes del viaje', 'La noche anterior', 'Desenlace').",
+              },
             },
+            required: [
+              "action",
+              "polishedText",
+              "placementExplanation",
+              "chronologicalContext",
+            ],
           },
         },
-        required: ["analysisSummary", "placements"],
+        newCharacters: {
+          type: Type.ARRAY,
+          description: "Nuevos personajes detectados en el dictado.",
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              role: { type: Type.STRING },
+              description: { type: Type.STRING },
+            },
+            required: ["name", "role", "description"],
+          },
+        },
+        newTimelineEvents: {
+          type: Type.ARRAY,
+          description: "Hitos cronológicos detectados para mantener coherencia temporal.",
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              timeContext: { type: Type.STRING },
+              event: { type: Type.STRING },
+            },
+            required: ["timeContext", "event"],
+          },
+        },
       },
+      required: ["analysisSummary", "placements"],
     },
-  });
+  };
+
+  let response;
+  try {
+    response = await generateWithFreeFallback(prompt, config);
+  } catch (err: any) {
+    throw formatGeminiError(err);
+  }
 
   const text = response.text || "{}";
   try {
@@ -232,17 +307,26 @@ export async function refineChapterWithGemini(
   bookGenre: string,
   instruction: string
 ): Promise<string> {
-  const response = await ai.models.generateContent({
-    model: "gemini-3.8-flash",
-    contents: `Capítulo original:\n${content}\n\nInstrucción de refinamiento:\n${instruction}\n\nGénero del libro: ${bookGenre}`,
-    config: {
-      systemInstruction:
-        "Eres un corrector de estilo y editor literario de prestigio. Refina y enriquece la prosa del capítulo según la instrucción, mejorando la cadencia, sensorialidad y diálogos, devolviendo únicamente el texto del capítulo pulido sin metatexto ni comentarios.",
-    },
-  });
+  const contents = `Capítulo original:\n${content}\n\nInstrucción de refinamiento:\n${instruction}\n\nGénero del libro: ${bookGenre}`;
+  const config = {
+    systemInstruction:
+      "Eres un corrector de estilo y editor literario de prestigio. Ajusta el capítulo según la instrucción, devolviendo únicamente el texto del capítulo sin metatexto ni comentarios.",
+  };
 
-  return response.text || content;
+  try {
+    const response = await generateWithFreeFallback(contents, config);
+    return response.text || content;
+  } catch (err: any) {
+    throw formatGeminiError(err);
+  }
 }
+
+export const DEFAULT_CONTINUATION_PROMPTS = [
+  "¿Qué detalle de aquel lugar o momento recuerdas con más claridad?",
+  "¿Qué pasó justo antes o inmediatamente después de esa escena?",
+  "¿Quién más estaba ahí y qué dijo o hizo en ese instante?",
+  "¿Cómo te sentiste o qué pensamiento se te cruzó por la cabeza?",
+];
 
 export async function generateContinuationPrompts(
   book: BookContext,
@@ -251,28 +335,29 @@ export async function generateContinuationPrompts(
   const currentChapter = book.chapters.find((c) => c.id === currentChapterId) || book.chapters[0];
   const lastExcerpt = currentChapter?.content?.slice(-600) || book.synopsis || "";
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3.8-flash",
-    contents: `Libro: "${book.title}" (${book.genre})\nÚltimo fragmento escrito:\n"${lastExcerpt}"`,
-    config: {
-      systemInstruction:
-        "Eres un editor que entrevista al autor para ayudarlo a seguir dictando su libro. Devuelve un arreglo JSON con exactamente 4 preguntas disparadoras inspiradoras, intrigantes o detalles sensoriales que el autor pueda responder con su voz para el siguiente fragmento.",
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: { type: Type.STRING },
-      },
-    },
-  });
-
   try {
-    return JSON.parse(response.text || "[]");
-  } catch {
-    return [
-      "¿Qué detalle sensorial de aquel lugar nunca has podido olvidar?",
-      "¿Qué sucedió inmediatamente después de ese momento?",
-      "¿Hubo alguien que presenciara la escena o dijera algo inesperado?",
-      "Si volvieras a ese día, ¿qué emoción predominaría en tu pecho?",
-    ];
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-flash-lite",
+      contents: `Libro: "${book.title}" (${book.genre})\nÚltimo fragmento escrito:\n"${lastExcerpt}"`,
+      config: {
+        systemInstruction:
+          "Eres un editor que entrevista al autor para ayudarlo a seguir dictando su libro. Devuelve un arreglo JSON con exactamente 4 preguntas disparadoras inspiradoras, intrigantes o detalles sensoriales que el autor pueda responder con su voz para el siguiente fragmento.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.text || "[]");
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+    return DEFAULT_CONTINUATION_PROMPTS;
+  } catch (err: any) {
+    console.warn("Using default continuation prompts (Gemini unavailable/quota):", err?.status || err?.message);
+    return DEFAULT_CONTINUATION_PROMPTS;
   }
 }
+

@@ -4,6 +4,14 @@ import {
   handleRefineChapter,
   handleContinuationPrompts,
   handleDownloadAndroidScript,
+  handleDownloadApk,
+  handleApkInfo,
+  handleApkBase64,
+  handleBillingStatus,
+  handleBillingCheckout,
+  handleBillingPortal,
+  handleBillingWebhook,
+  handleBillingDemoToggle,
 } from "./apiRouter";
 
 export function bookApiPlugin(): Plugin {
@@ -15,8 +23,7 @@ export function bookApiPlugin(): Plugin {
           return next();
         }
 
-        // Helper to parse JSON body
-        const parseJsonBody = (): Promise<any> => {
+        const readBody = (): Promise<{ raw: string; json: any }> => {
           return new Promise((resolve) => {
             let body = "";
             req.on("data", (chunk) => {
@@ -24,9 +31,12 @@ export function bookApiPlugin(): Plugin {
             });
             req.on("end", () => {
               try {
-                resolve(body ? JSON.parse(body) : {});
+                resolve({
+                  raw: body,
+                  json: body ? JSON.parse(body) : {},
+                });
               } catch {
-                resolve({});
+                resolve({ raw: body, json: {} });
               }
             });
           });
@@ -35,7 +45,6 @@ export function bookApiPlugin(): Plugin {
         const jsonReq: any = req;
         const jsonRes: any = res;
 
-        // Add standard Express-like json and status helpers if not present
         if (!jsonRes.json) {
           jsonRes.json = (data: any) => {
             jsonRes.setHeader("Content-Type", "application/json");
@@ -50,7 +59,9 @@ export function bookApiPlugin(): Plugin {
         }
 
         if (req.method === "POST") {
-          jsonReq.body = await parseJsonBody();
+          const parsed = await readBody();
+          jsonReq.rawBody = parsed.raw;
+          jsonReq.body = parsed.json;
         }
 
         const url = req.url.split("?")[0];
@@ -61,6 +72,25 @@ export function bookApiPlugin(): Plugin {
           return handleRefineChapter(jsonReq, jsonRes);
         } else if (url === "/api/continuation-prompts" && req.method === "POST") {
           return handleContinuationPrompts(jsonReq, jsonRes);
+        } else if (url === "/api/billing/status" && req.method === "GET") {
+          return handleBillingStatus(jsonReq, jsonRes);
+        } else if (url === "/api/billing/checkout" && req.method === "POST") {
+          return handleBillingCheckout(jsonReq, jsonRes);
+        } else if (url === "/api/billing/portal" && req.method === "POST") {
+          return handleBillingPortal(jsonReq, jsonRes);
+        } else if (url === "/api/billing/webhook" && req.method === "POST") {
+          return handleBillingWebhook(jsonReq, jsonRes);
+        } else if (url === "/api/billing/demo-toggle" && req.method === "POST") {
+          return handleBillingDemoToggle(jsonReq, jsonRes);
+        } else if (url === "/api/apk-info" && req.method === "GET") {
+          return handleApkInfo(jsonReq, jsonRes);
+        } else if (url === "/api/apk-base64" && req.method === "GET") {
+          return handleApkBase64(jsonReq, jsonRes);
+        } else if (
+          url === "/api/download-apk" &&
+          (req.method === "GET" || req.method === "HEAD")
+        ) {
+          return handleDownloadApk(jsonReq, jsonRes);
         } else if (url === "/api/download-android-script" && req.method === "GET") {
           return handleDownloadAndroidScript(jsonReq, jsonRes);
         }

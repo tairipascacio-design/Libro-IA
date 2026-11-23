@@ -1,9 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-// SpeechRecognition type declarations for webkit prefix
 interface IWindow extends Window {
   webkitSpeechRecognition?: any;
   SpeechRecognition?: any;
+  AndroidBridge?: {
+    isNativeAndroid: () => boolean;
+    startSpeech: (lang: string) => void;
+    stopSpeech: () => void;
+  };
+  __androidSpeechStart?: () => void;
+  __androidSpeechEnd?: () => void;
+  __androidSpeechLevel?: (level: number) => void;
+  __androidSpeechResult?: (text: string, isFinal: boolean) => void;
+  __androidSpeechError?: (msg: string) => void;
 }
 
 export interface UseSpeechRecognitionOptions {
@@ -30,17 +39,66 @@ export function useSpeechRecognition({
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
+  const isNativeAndroid =
+    typeof window !== "undefined" &&
+    !!(window as unknown as IWindow).AndroidBridge?.isNativeAndroid?.();
+
   // Check support
   useEffect(() => {
     const win = window as unknown as IWindow;
     const SpeechRecognitionAPI =
       win.SpeechRecognition || win.webkitSpeechRecognition;
-    if (!SpeechRecognitionAPI) {
+    if (!SpeechRecognitionAPI && !isNativeAndroid) {
       setIsSupported(false);
     }
-  }, []);
+  }, [isNativeAndroid]);
 
-  // Audio level visualizer loop
+  // Wire Native Android Speech Bridge callbacks if inside APK
+  useEffect(() => {
+    if (!isNativeAndroid) return;
+    const win = window as unknown as IWindow;
+
+    win.__androidSpeechStart = () => {
+      setIsListening(true);
+      setErrorMessage(null);
+    };
+    win.__androidSpeechEnd = () => {
+      setIsListening(false);
+      setInterimTranscript("");
+      setAudioLevel(0);
+    };
+    win.__androidSpeechLevel = (level: number) => {
+      setAudioLevel(level);
+    };
+    win.__androidSpeechResult = (text: string, isFinal: boolean) => {
+      if (isFinal) {
+        setTranscript((prev) => {
+          const next = (prev ? prev.trim() + " " : "") + text.trim();
+          onResult?.(next, true);
+          return next;
+        });
+        setInterimTranscript("");
+      } else {
+        setInterimTranscript(text);
+        onResult?.(text, false);
+      }
+    };
+    win.__androidSpeechError = (msg: string) => {
+      setIsListening(false);
+      setErrorMessage(msg);
+      onError?.(msg);
+    };
+
+    return () => {
+      delete win.__androidSpeechStart;
+      delete win.__androidSpeechEnd;
+      delete win.__androidSpeechLevel;
+      delete win.__androidSpeechResult;
+      delete win.__androidSpeechError;
+    };
+  }, [isNativeAndroid, onError, onResult]);
+
+  // Audio level visualizer loop (Web)
   const startAudioAnalysis = useCallback(async () => {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -98,23 +156,27 @@ export function useSpeechRecognition({
     setAudioLevel(0);
   }, []);
 
-  // Initialize SpeechRecognition
   const startListening = useCallback(() => {
     setErrorMessage(null);
     const win = window as unknown as IWindow;
+
+    if (isNativeAndroid && win.AndroidBridge) {
+      win.AndroidBridge.startSpeech(lang);
+      return;
+    }
+
     const SpeechRecognitionAPI =
       win.SpeechRecognition || win.webkitSpeechRecognition;
 
     if (!SpeechRecognitionAPI) {
       const msg =
-        "Tu navegador actual no soporta reconocimiento de voz nativo (Web Speech API). Puedes escribir o pegar tu dictado directamente en el cuadro de texto.";
+        "Tu navegador actual no soporta reconocimiento de voz nativo. Puedes escribir o pegar tu dictado directamente en el cuadro de texto.";
       setErrorMessage(msg);
       onError?.(msg);
       return;
     }
 
     try {
-      // If already active, abort first
       if (recognitionRef.current) {
         recognitionRef.current.abort();
       }
@@ -161,12 +223,10 @@ export function useSpeechRecognition({
         console.warn("Speech recognition error:", event.error);
         if (event.error === "not-allowed") {
           const msg =
-            "Permiso de micrófono denegado. Por favor permite el acceso al micrófono en los ajustes de tu navegador.";
+            "Permiso de micrófono denegado. Por favor permite el acceso al micrófono en los ajustes.";
           setErrorMessage(msg);
           onError?.(msg);
-        } else if (event.error === "no-speech") {
-          // ignore transient silence
-        } else {
+        } else if (event.error !== "no-speech") {
           setErrorMessage(`Aviso de micrófono: ${event.error}`);
         }
       };
@@ -186,9 +246,17 @@ export function useSpeechRecognition({
       setIsListening(false);
       stopAudioAnalysis();
     }
-  }, [lang, onError, onResult, startAudioAnalysis, stopAudioAnalysis]);
+  }, [isNativeAndroid, lang, onError, onResult, startAudioAnalysis, stopAudioAnalysis]);
 
   const stopListening = useCallback(() => {
+    const win = window as unknown as IWindow;
+    if (isNativeAndroid && win.AndroidBridge) {
+      win.AndroidBridge.stopSpeech();
+      setIsListening(false);
+      setInterimTranscript("");
+      return;
+    }
+
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -199,7 +267,7 @@ export function useSpeechRecognition({
     setIsListening(false);
     setInterimTranscript("");
     stopAudioAnalysis();
-  }, [stopAudioAnalysis]);
+  }, [isNativeAndroid, stopAudioAnalysis]);
 
   const resetTranscript = useCallback(() => {
     setTranscript("");

@@ -18,13 +18,11 @@ const GENRES: BookGenre[] = [
   "Poesía y Prosa Poética",
 ];
 
-const TONES: BookTone[] = [
-  "Literario y Evocador",
-  "Intimo y Emocional",
-  "Dinámico y de Suspenso",
-  "Reflexivo y Filosófico",
-  "Cálido y Conversacional",
-  "Épico y Poético",
+const FORMAT_STYLES: BookTone[] = [
+  "Fiel a mis palabras (solo puntuación y orden)",
+  "Diálogos con raya literaria (—)",
+  "Orden cronológico estricto",
+  "Corrección ortográfica ligera",
 ];
 
 export const NewBookModal: React.FC<NewBookModalProps> = ({
@@ -33,36 +31,40 @@ export const NewBookModal: React.FC<NewBookModalProps> = ({
 }) => {
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
-  const [author, setAuthor] = useState("Tairí Pascacio");
+  const [author, setAuthor] = useState("");
   const [genre, setGenre] = useState<BookGenre>("Novela de Ficción");
-  const [tone, setTone] = useState<BookTone>("Literario y Evocador");
+  const [tone, setTone] = useState<BookTone>(
+    "Fiel a mis palabras (solo puntuación y orden)"
+  );
   const [synopsis, setSynopsis] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
+    const now = new Date().toISOString();
     const newBook: Book = {
       id: `book-${Date.now()}`,
       title: title.trim(),
       subtitle: subtitle.trim() || undefined,
-      author: author.trim() || "Autor Anónimo",
+      author: author.trim(),
       genre,
       tone,
       synopsis:
         synopsis.trim() ||
-        `Obra literaria en desarrollo dictada por voz en género ${genre}.`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+        `Obra dictada por voz en género ${genre}, conservando fielmente las palabras del autor.`,
+      isDemo: false,
+      createdAt: now,
+      updatedAt: now,
       chapters: [
         {
           id: `ch-1-${Date.now()}`,
           order: 1,
           title: "Capítulo I: El Comienzo",
-          summary: "Inicio del libro y presentación de los primeros hechos.",
+          summary: "Inicio del libro y primeros dictados.",
           content: "",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: now,
+          updatedAt: now,
         },
       ],
       characters: [],
@@ -75,18 +77,19 @@ export const NewBookModal: React.FC<NewBookModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl relative text-stone-200">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-5 shadow-2xl relative text-stone-200 my-6">
         <div className="flex items-center justify-between pb-3 border-b border-stone-800">
-          <div className="flex items-center gap-2">
-            <BookPlus className="w-5 h-5 text-amber-400" />
-            <h2 className="text-lg font-bold font-display-book text-stone-100">
-              Crear Nuevo Libro para Dictar
+          <div className="flex items-center gap-2 min-w-0">
+            <BookPlus className="w-5 h-5 text-amber-400 shrink-0" />
+            <h2 className="text-lg font-bold font-display-book text-stone-100 truncate">
+              Crear Nuevo Libro
             </h2>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition"
+            className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
@@ -114,7 +117,7 @@ export const NewBookModal: React.FC<NewBookModalProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="Ej: Una historia de valor..."
+                placeholder="Ej: Una historia real..."
                 value={subtitle}
                 onChange={(e) => setSubtitle(e.target.value)}
                 className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3.5 py-2 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:border-amber-500"
@@ -127,6 +130,7 @@ export const NewBookModal: React.FC<NewBookModalProps> = ({
               </label>
               <input
                 type="text"
+                placeholder="Tu nombre o seudónimo"
                 value={author}
                 onChange={(e) => setAuthor(e.target.value)}
                 className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3.5 py-2 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:border-amber-500"
@@ -154,14 +158,14 @@ export const NewBookModal: React.FC<NewBookModalProps> = ({
 
             <div>
               <label className="font-semibold text-stone-300 block mb-1">
-                Tono de la redacción
+                Estilo de formato
               </label>
               <select
                 value={tone}
                 onChange={(e) => setTone(e.target.value as BookTone)}
                 className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-stone-200 focus:outline-none focus:border-amber-500"
               >
-                {TONES.map((t) => (
+                {FORMAT_STYLES.map((t) => (
                   <option key={t} value={t}>
                     {t}
                   </option>
@@ -172,11 +176,11 @@ export const NewBookModal: React.FC<NewBookModalProps> = ({
 
           <div>
             <label className="font-semibold text-stone-300 block mb-1">
-              Idea general o sinopsis previa
+              Sinopsis o idea general (opcional)
             </label>
             <textarea
               rows={3}
-              placeholder="¿De qué tratará el libro? ¿Qué mensaje o trama deseas narrar?"
+              placeholder="¿De qué tratará tu libro?"
               value={synopsis}
               onChange={(e) => setSynopsis(e.target.value)}
               className="w-full bg-stone-950 border border-stone-800 rounded-xl p-3 text-xs text-stone-200 placeholder-stone-500 focus:outline-none focus:border-amber-500"

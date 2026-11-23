@@ -7,32 +7,46 @@ import {
   Check,
   FileText,
   BookOpen,
+  Lock,
+  Loader2,
+  FileCode2,
 } from "lucide-react";
-import { Book } from "../types";
+import { BillingStatus, Book, PaywallReason } from "../types";
+import { exportBookAsDocx, exportBookAsEpub } from "../utils/exporters";
 
 interface ExportModalProps {
   currentBook: Book;
   onClose: () => void;
+  billingStatus: BillingStatus | null;
+  onTriggerPaywall: (reason: PaywallReason) => void;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
   currentBook,
   onClose,
+  billingStatus,
+  onTriggerPaywall,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [exportingType, setExportingType] = useState<string | null>(null);
+
+  const isPro = Boolean(billingStatus?.isPro);
+
+  const totalWords = currentBook.chapters.reduce(
+    (sum, c) => sum + c.content.split(/\s+/).filter(Boolean).length,
+    0
+  );
 
   const getFullManuscriptText = () => {
     let full = `# ${currentBook.title}\n`;
     if (currentBook.subtitle) full += `## ${currentBook.subtitle}\n`;
-    full += `Por: ${currentBook.author}\n\n`;
+    if (currentBook.author) full += `Por: ${currentBook.author}\n\n`;
     full += `Género: ${currentBook.genre}\n`;
-    full += `Sinopsis: ${currentBook.synopsis}\n\n`;
-    full += `---\n\n`;
+    full += `Sinopsis: ${currentBook.synopsis}\n\n---\n\n`;
 
     currentBook.chapters.forEach((ch, idx) => {
       full += `### ${ch.title || `Capítulo ${idx + 1}`}\n\n`;
-      full += `${ch.content}\n\n`;
-      full += `* * *\n\n`;
+      full += `${ch.content}\n\n* * *\n\n`;
     });
 
     return full;
@@ -55,48 +69,30 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadHtmlEpub = () => {
-    let html = `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="utf-8">
-  <title>${currentBook.title}</title>
-  <style>
-    body { font-family: 'Georgia', serif; line-height: 1.8; max-width: 750px; margin: 40px auto; padding: 20px; color: #222; }
-    h1 { text-align: center; font-size: 2.4em; margin-bottom: 0.2em; }
-    .author { text-align: center; font-style: italic; margin-bottom: 2em; }
-    .chapter { page-break-before: always; margin-top: 4em; }
-    h2 { font-size: 1.6em; border-bottom: 1px solid #ccc; padding-bottom: 0.3em; }
-    p { text-indent: 2em; margin-bottom: 1em; text-align: justify; }
-    .dropcap::first-letter { font-size: 3em; float: left; line-height: 0.8; padding-right: 8px; }
-  </style>
-</head>
-<body>
-  <h1>${currentBook.title}</h1>
-  ${currentBook.subtitle ? `<h3 style="text-align:center; color:#666;">${currentBook.subtitle}</h3>` : ""}
-  <p class="author">Por: ${currentBook.author}</p>
-  <hr/>
-`;
+  const handleExportEpub = async () => {
+    if (!isPro) {
+      onTriggerPaywall("export");
+      return;
+    }
+    setExportingType("epub");
+    try {
+      await exportBookAsEpub(currentBook);
+    } finally {
+      setExportingType(null);
+    }
+  };
 
-    currentBook.chapters.forEach((ch, idx) => {
-      html += `<div class="chapter">
-        <h2>${ch.title || `Capítulo ${idx + 1}`}</h2>
-        ${ch.content
-          .split("\n\n")
-          .map((p, pIdx) => `<p class="${pIdx === 0 ? "dropcap" : ""}">${p}</p>`)
-          .join("")}
-      </div>`;
-    });
-
-    html += `</body></html>`;
-
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${currentBook.title.replace(/\s+/g, "_")}_eBook.html`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleExportDocx = async () => {
+    if (!isPro) {
+      onTriggerPaywall("export");
+      return;
+    }
+    setExportingType("docx");
+    try {
+      await exportBookAsDocx(currentBook);
+    } finally {
+      setExportingType(null);
+    }
   };
 
   const handlePrint = () => {
@@ -104,92 +100,155 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-2xl w-full p-6 space-y-6 shadow-2xl relative text-stone-200">
-        <div className="flex items-center justify-between pb-3 border-b border-stone-800">
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-amber-400" />
-            <h2 className="text-lg font-bold font-display-book text-stone-100">
-              Exportar Manuscrito — {currentBook.title}
-            </h2>
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-2xl w-full p-5 sm:p-6 space-y-5 shadow-2xl relative text-stone-200 my-6 max-h-[92vh] overflow-y-auto">
+        {/* Header (wrapping cleanly, never clipped on mobile) */}
+        <div className="flex items-start justify-between gap-3 pb-3 border-b border-stone-800">
+          <div className="flex items-start gap-2.5 min-w-0">
+            <BookOpen className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-bold font-display-book text-stone-100 leading-snug break-words">
+                Exportar Manuscrito — {currentBook.title}
+              </h2>
+              <p className="text-xs text-stone-400 font-mono tabular-nums mt-0.5">
+                {currentBook.chapters.length} capítulos ·{" "}
+                {totalWords.toLocaleString()} palabras
+              </p>
+            </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition"
+            className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition shrink-0"
+            aria-label="Cerrar exportación"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Pro Formats + Preview Formats */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* EPUB Real for Amazon KDP / Kindle */}
           <button
-            onClick={handlePrint}
-            className="flex flex-col items-center justify-center p-4 rounded-2xl bg-stone-950/60 hover:bg-stone-800 border border-stone-800 hover:border-amber-500/50 transition group text-center space-y-2"
+            type="button"
+            onClick={handleExportEpub}
+            disabled={exportingType === "epub"}
+            className="flex items-start gap-3 p-4 rounded-2xl bg-gradient-to-br from-amber-500/15 to-rose-500/10 hover:from-amber-500/25 hover:to-rose-500/20 border border-amber-400/40 transition text-left relative"
           >
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:bg-amber-500 group-hover:text-black transition">
+            <div className="w-10 h-10 rounded-xl bg-amber-400 text-stone-950 flex items-center justify-center shrink-0">
+              {exportingType === "epub" ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Download className="w-5 h-5" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-sm text-white">
+                  eBook (.EPUB)
+                </span>
+                {!isPro && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-amber-400 text-stone-950 shrink-0">
+                    <Lock className="w-3 h-3" />
+                    Pro
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-stone-300 mt-1">
+                Archivo oficial listo para Amazon KDP, Kindle y Apple Books.
+              </p>
+            </div>
+          </button>
+
+          {/* DOCX Word */}
+          <button
+            type="button"
+            onClick={handleExportDocx}
+            disabled={exportingType === "docx"}
+            className="flex items-start gap-3 p-4 rounded-2xl bg-gradient-to-br from-cyan-500/15 to-violet-500/10 hover:from-cyan-500/25 hover:to-violet-500/20 border border-cyan-400/35 transition text-left relative"
+          >
+            <div className="w-10 h-10 rounded-xl bg-cyan-400 text-stone-950 flex items-center justify-center shrink-0">
+              {exportingType === "docx" ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <FileCode2 className="w-5 h-5" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-sm text-white">
+                  Microsoft Word (.DOCX)
+                </span>
+                {!isPro && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-amber-400 text-stone-950 shrink-0">
+                    <Lock className="w-3 h-3" />
+                    Pro
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-stone-300 mt-1">
+                Documento editable con portada y saltos de capítulo.
+              </p>
+            </div>
+          </button>
+
+          {/* Print / PDF */}
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="flex items-start gap-3 p-4 rounded-2xl bg-stone-950/70 hover:bg-stone-800 border border-stone-800 hover:border-amber-500/40 transition text-left"
+          >
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0">
               <Printer className="w-5 h-5" />
             </div>
-            <span className="font-semibold text-xs text-stone-200">
-              Imprimir / Guardar PDF
-            </span>
-            <span className="text-[11px] text-stone-400">
-              Formato editorial de libro listo para impresora
-            </span>
-          </button>
-
-          <button
-            onClick={handleDownloadHtmlEpub}
-            className="flex flex-col items-center justify-center p-4 rounded-2xl bg-stone-950/60 hover:bg-stone-800 border border-stone-800 hover:border-amber-500/50 transition group text-center space-y-2"
-          >
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:bg-amber-500 group-hover:text-black transition">
-              <Download className="w-5 h-5" />
+            <div className="min-w-0 flex-1">
+              <span className="font-bold text-sm text-stone-100 block">
+                Imprimir / PDF
+              </span>
+              <p className="text-[11px] text-stone-400 mt-1">
+                {isPro
+                  ? "Edición limpia lista para imprimir o guardar en PDF."
+                  : "Vista previa gratuita con marca de agua discreta."}
+              </p>
             </div>
-            <span className="font-semibold text-xs text-stone-200">
-              Descargar eBook (HTML)
-            </span>
-            <span className="text-[11px] text-stone-400">
-              Compatible con lectores electrónicos y Kindle
-            </span>
           </button>
 
+          {/* TXT */}
           <button
+            type="button"
             onClick={handleDownloadTxt}
-            className="flex flex-col items-center justify-center p-4 rounded-2xl bg-stone-950/60 hover:bg-stone-800 border border-stone-800 hover:border-amber-500/50 transition group text-center space-y-2"
+            className="flex items-start gap-3 p-4 rounded-2xl bg-stone-950/70 hover:bg-stone-800 border border-stone-800 hover:border-amber-500/40 transition text-left"
           >
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:bg-amber-500 group-hover:text-black transition">
+            <div className="w-10 h-10 rounded-xl bg-stone-800 text-stone-200 flex items-center justify-center shrink-0">
               <FileText className="w-5 h-5" />
             </div>
-            <span className="font-semibold text-xs text-stone-200">
-              Descargar Texto (.txt)
-            </span>
-            <span className="text-[11px] text-stone-400">
-              Formato universal con capítulos ordenados
-            </span>
+            <div className="min-w-0 flex-1">
+              <span className="font-bold text-sm text-stone-100 block">
+                Texto Plano (.TXT)
+              </span>
+              <p className="text-[11px] text-stone-400 mt-1">
+                Respaldo universal ligero con todos los capítulos ordenados.
+              </p>
+            </div>
           </button>
         </div>
 
         {/* Copy to clipboard bar */}
-        <div className="p-4 rounded-2xl bg-stone-950 border border-stone-800 flex items-center justify-between">
-          <div className="text-xs">
+        <div className="p-4 rounded-2xl bg-stone-950 border border-stone-800 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs min-w-0">
             <span className="font-semibold text-stone-200 block">
-              Copiar todo el manuscrito al portapapeles
+              Copiar manuscrito al portapapeles
             </span>
-            <span className="text-stone-400">
-              {currentBook.chapters.length} capítulos •{" "}
-              {currentBook.chapters
-                .reduce(
-                  (sum, c) =>
-                    sum + c.content.split(/\s+/).filter(Boolean).length,
-                  0
-                )
-                .toLocaleString()}{" "}
-              palabras
+            <span className="text-stone-400 tabular-nums">
+              {currentBook.chapters.length} capítulos ·{" "}
+              {totalWords.toLocaleString()} palabras
             </span>
           </div>
 
           <button
+            type="button"
             onClick={handleCopy}
-            className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold text-xs flex items-center gap-1.5 transition border border-stone-700"
+            className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold text-xs flex items-center gap-1.5 transition border border-stone-700 shrink-0"
           >
             {copied ? (
               <>
@@ -205,8 +264,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </button>
         </div>
 
-        {/* Print Preview Hidden Container rendered during print */}
+        {/* Print Preview Hidden Container */}
         <div className="hidden print:block font-book text-black">
+          {!isPro && (
+            <p className="text-center text-xs text-gray-500 uppercase tracking-widest mb-4 border-b pb-2">
+              Vista previa gratuita — Voz a Libro
+            </p>
+          )}
           <h1 className="text-3xl font-bold text-center mb-2">
             {currentBook.title}
           </h1>
@@ -215,7 +279,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               {currentBook.subtitle}
             </h2>
           )}
-          <p className="text-center italic mb-12">Por: {currentBook.author}</p>
+          {currentBook.author && (
+            <p className="text-center italic mb-12">Por: {currentBook.author}</p>
+          )}
 
           {currentBook.chapters.map((ch, idx) => (
             <div key={ch.id} className="print-page mt-8">
@@ -223,10 +289,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 {ch.title || `Capítulo ${idx + 1}`}
               </h3>
               {ch.content.split("\n\n").map((p, pIdx) => (
-                <p key={pIdx} className="mb-4 text-justify indent-8 text-base">
+                <p key={pIdx} className="mb-4 text-left indent-8 text-base">
                   {p}
                 </p>
               ))}
+              {!isPro && (
+                <p className="mt-8 text-[10px] text-gray-400 text-right">
+                  Generado con Voz a Libro (Edición Gratuita)
+                </p>
+              )}
             </div>
           ))}
         </div>
